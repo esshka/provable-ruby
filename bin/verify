@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Checks every proof, the drift lock, Ruby-vs-Lean conformance, and every counterexample.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if [[ "${1:-}" == "--relock" ]]; then
+  files=$(awk '{print $2}' models.lock)
+  shasum -a 256 $files > models.lock
+  echo "models.lock updated"
+  exit 0
+fi
+
+echo "== proofs"
+lake build --quiet
+if grep -nwE "sorry|admit" examples/*/*.lean; then
+  echo "FAIL: a proof is missing"; exit 1
+fi
+echo "all theorems checked"
+
+echo "== drift lock"
+if ! shasum -a 256 --quiet -c models.lock; then
+  echo "FAIL: Ruby changed since its model was last checked."
+  echo "Re-read the model against the Ruby, fix it, then run: bin/verify --relock"
+  exit 1
+fi
+echo "Ruby sources match models.lock"
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+for dir in examples/*/; do
+  echo "== $(basename "$dir")"
+  lake env lean --run "$dir/probe.lean" > "$tmp/lean.txt" || { cat "$tmp/lean.txt"; exit 1; }
+  ruby "$dir/probe.rb" < "$tmp/lean.txt" > "$tmp/ruby.txt"
+  if ! diff -u --label lean --label ruby "$tmp/lean.txt" "$tmp/ruby.txt" > "$tmp/diff.txt"; then
+    head -20 "$tmp/diff.txt"
+    echo "FAIL: Ruby and the Lean model disagree (rows above)"; exit 1
+  fi
+  echo "CONFORMS $(wc -l < "$tmp/lean.txt" | tr -d ' ') rows"
+  ruby "$dir/counterexamples.rb"
+done

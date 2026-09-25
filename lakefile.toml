@@ -1,0 +1,10 @@
+name = "formal-ruby"
+defaultTargets = ["MoneySplit", "OrderFlow"]
+
+[[lean_lib]]
+name = "MoneySplit"
+srcDir = "examples/01_money_split"
+
+[[lean_lib]]
+name = "OrderFlow"
+srcDir = "examples/02_order_flow"

@@ -1,0 +1,170 @@
+/-!
+# Model of `order_flow.rb`
+
+Source: examples/02_order_flow/order_flow.rb
+Trust:
+* Ruby `Integer` is Lean `Int`, Ruby `Array` is Lean `List`, a status symbol is a `Status` case.
+* Each Ruby `Data` event class is one `Event` case. Event ids and amounts are Integers.
+* `raise ArgumentError, msg` is `.error msg`. A `nil` from `apply` is `none`.
+-/
+namespace OrderFlow
+
+inductive Status
+  | placed
+  | paid
+  | shipped
+  | cancelled
+  deriving DecidableEq, Repr
+
+structure Order where
+  status : Status
+  total : Int
+  paid : Int
+  refunded : Int
+  seen : List Int
+  deriving DecidableEq, Repr
+
+inductive Event
+  | pay (id amount : Int)
+  | ship (id : Int)
+  | cancel (id : Int)
+  | refund (id amount : Int)
+  deriving DecidableEq, Repr
+
+def Event.id : Event → Int
+  | .pay id _ | .ship id | .cancel id | .refund id _ => id
+
+def start (total : Int) : Except String Order :=
+  if ¬ total > 0 then .error "total must be positive" else
+  .ok { status := .placed, total, paid := 0, refunded := 0, seen := [] }
+
+def apply (order : Order) (event : Event) : Option Order :=
+  match order.status, event with
+  | .placed, .pay _ amount =>
+    if amount > 0 ∧ order.paid + amount ≤ order.total then
+      let paid := order.paid + amount
+      some { order with paid, status := if paid = order.total then .paid else .placed }
+    else none
+  | .paid, .ship _ => some { order with status := .shipped }
+  | .placed, .cancel _ | .paid, .cancel _ => some { order with status := .cancelled }
+  | .cancelled, .refund _ amount =>
+    if amount > 0 ∧ order.refunded + amount ≤ order.paid then
+      some { order with refunded := order.refunded + amount }
+    else none
+  | _, _ => none
+
+def step (order : Order) (event : Event) : Order :=
+  if event.id ∈ order.seen then order else
+  match apply order event with
+  | some nxt => { nxt with seen := order.seen ++ [event.id] }
+  | none => order
+
+def run (order : Order) (events : List Event) : Order :=
+  events.foldl step order
+
+/-! ## Invariants -/
+
+/-- Money and status always agree. -/
+structure Valid (o : Order) : Prop where
+  refunded_not_negative : 0 ≤ o.refunded
+  refunded_le_paid : o.refunded ≤ o.paid
+  paid_le_total : o.paid ≤ o.total
+  placed_still_owes : o.status = .placed → o.paid < o.total
+  paid_in_full : o.status = .paid ∨ o.status = .shipped → o.paid = o.total
+  refund_only_when_cancelled : 0 < o.refunded → o.status = .cancelled
+
+/-- The status diagram the business agreed on. Staying in the same status is always allowed. -/
+def allowed : Status → Status → Bool
+  | .placed, .paid | .placed, .cancelled | .paid, .shipped | .paid, .cancelled => true
+  | s, t => s == t
+
+/-- An order that some list of events can make from a fresh start. -/
+def Reachable (o : Order) : Prop :=
+  ∃ total o₀ events, start total = .ok o₀ ∧ run o₀ events = o
+
+/-! ## Proven -/
+
+theorem start_valid (h : start total = .ok o) : Valid o := by
+  unfold start at h
+  split at h; · contradiction
+  injection h with h; subst h
+  constructor <;> simp <;> omega
+
+theorem apply_valid (hv : Valid o) (h : apply o e = some o') : Valid o' := by
+  obtain ⟨status, total, paid, refunded, seen⟩ := o
+  obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hv
+  simp only at h1 h2 h3 h4 h5 h6
+  cases status <;> cases e <;> simp only [apply] at h <;> (try split at h) <;>
+    first | contradiction | (injection h with h; subst h; constructor <;> simp <;> (try split) <;> simp_all <;> omega)
+
+theorem step_valid (hv : Valid o) : Valid (step o e) := by
+  unfold step
+  split; · exact hv
+  split
+  · rename_i h
+    have := apply_valid hv h
+    exact ⟨this.1, this.2, this.3, this.4, this.5, this.6⟩
+  · exact hv
+
+theorem run_valid (hv : Valid o) : Valid (run o events) := by
+  induction events generalizing o with
+  | nil => exact hv
+  | cons e events ih => exact ih (step_valid hv)
+
+/-- Headline: whatever events arrive, in whatever order, money and status stay consistent. -/
+theorem valid_after_any_events (h : start total = .ok o) : Valid (run o events) :=
+  run_valid (start_valid h)
+
+/-- A retried event (a webhook sent twice, a job run twice) changes nothing. -/
+theorem step_twice : step (step o e) e = step o e := by
+  unfold step
+  by_cases hs : e.id ∈ o.seen
+  · simp [hs]
+  · cases ha : apply o e <;> simp [hs, ha]
+
+theorem allowed_self : allowed s s := by
+  cases s <;> rfl
+
+theorem apply_follows_diagram (h : apply o e = some o') : allowed o.status o'.status := by
+  obtain ⟨status, total, paid, refunded, seen⟩ := o
+  cases status <;> cases e <;> simp only [apply] at h <;> (try split at h) <;>
+    first | contradiction | (injection h with h; subst h; (try split) <;> rfl)
+
+/-- The code never moves the status outside the agreed diagram. -/
+theorem step_follows_diagram : allowed o.status (step o e).status := by
+  unfold step
+  split
+  · exact allowed_self
+  · split
+    · rename_i h
+      have := apply_follows_diagram h
+      exact this
+    · exact allowed_self
+
+theorem step_shipped (h : o.status = .shipped) : step o e = o := by
+  obtain ⟨status, total, paid, refunded, seen⟩ := o
+  simp only at h; subst h
+  unfold step
+  split
+  · rfl
+  · cases e <;> rfl
+
+/-- Nothing changes a shipped order. -/
+theorem shipped_is_final (h : o.status = .shipped) : run o events = o := by
+  induction events with
+  | nil => rfl
+  | cons e events ih => simp only [run, List.foldl_cons, step_shipped h] at ih ⊢; exact ih
+
+/-! ## Refuted (counterexamples) -/
+
+-- Pay 100, then ship. After that no list of events refunds the money.
+-- This is a product question (returns after shipping), not a code bug.
+theorem refund_not_always_possible :
+    ¬ ∀ o, Reachable o → ∃ events, (run o events).refunded = o.paid := by
+  intro h
+  let o := run ⟨.placed, 100, 0, 0, []⟩ [.pay 1 100, .ship 2]
+  obtain ⟨events, he⟩ := h o ⟨100, _, _, rfl, rfl⟩
+  rw [shipped_is_final (by decide)] at he
+  exact absurd he (by decide)
+
+end OrderFlow

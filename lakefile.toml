@@ -1,4 +1,4 @@
-name = "formal-ruby"
+name = "provable-ruby"
 defaultTargets = ["MoneySplit", "OrderFlow"]
 
 [[lean_lib]]

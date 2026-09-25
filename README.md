@@ -1,8 +1,8 @@
-# formal-ruby
+# provable-ruby
 
 Prove that Ruby code keeps its rules for **every** input, not only for the inputs a test happens to try.
 
-formal-ruby is a method plus a working template:
+provable-ruby is a method plus a working template:
 
 1. Write the business logic in **verifiable Ruby**. This is a small, strict subset of Ruby, and each of its lines maps to one Lean 4 line.
 2. Copy that code into **Lean 4** by hand, line for line, and state its rules as theorems. Lean checks every proof.

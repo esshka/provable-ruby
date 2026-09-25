@@ -1,6 +1,6 @@
 {"version": "1.2.0",
  "packagesDir": ".lake/packages",
  "packages": [],
- "name": "«formal-ruby»",
+ "name": "«provable-ruby»",
  "lakeDir": ".lake",
  "fixedToolchain": false}

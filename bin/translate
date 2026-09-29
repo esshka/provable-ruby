@@ -1,0 +1,30 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Usage: bin/translate [--check]
+# Writes <example dir>/<Module>/Code.lean for each Ruby file in models.lock.
+# --check writes nothing and fails if any generated file is out of date.
+require "fileutils"
+require_relative "../lib/lean_translator"
+
+root = File.expand_path("..", __dir__)
+check = ARGV.include?("--check")
+sources = File.readlines(File.join(root, "models.lock")).map { _1.split.last }
+
+stale = sources.filter_map do |rel|
+  mod, lean = LeanTranslator.translate(File.read(File.join(root, rel)), path: rel)
+  out = File.join(File.dirname(rel), mod, "Code.lean")
+  path = File.join(root, out)
+  next if File.exist?(path) && File.read(path) == lean
+  next out if check
+
+  FileUtils.mkdir_p(File.dirname(path))
+  File.write(path, lean)
+  puts "wrote #{out}"
+rescue LeanTranslator::Unsupported => e
+  warn "#{rel}: #{e.message}"
+  exit 1
+end
+
+stale.each { puts "stale: #{_1}" }
+exit(stale.empty? ? 0 : 1)

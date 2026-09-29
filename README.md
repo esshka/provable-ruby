@@ -5,15 +5,17 @@ Prove that Ruby code keeps its rules for **every** input, not only for the input
 provable-ruby is a method plus a working template:
 
 1. Write the business logic in **verifiable Ruby**. This is a small, strict subset of Ruby, and each of its lines maps to one Lean 4 line.
-2. Copy that code into **Lean 4** by hand, line for line, and state its rules as theorems. Lean checks every proof.
+2. Run `bin/translate`. It turns that code into **Lean 4**, line for line. You state its rules as theorems, and Lean checks every proof.
 3. Keep the model tied to the real code. A **conformance probe** runs Ruby and Lean on the same thousands of inputs and diffs the outputs. A **drift lock** fails when the Ruby changes. Every **counterexample** Lean finds is run again on the real Ruby.
 
 ```
 $ bin/verify
-== proofs
-all theorems checked
 == verifiable ruby
 Ruby sources use only verifiable Ruby
+== translation
+generated Lean matches the Ruby
+== proofs
+all theorems checked
 == drift lock
 Ruby sources match models.lock
 == 01_money_split
@@ -37,14 +39,14 @@ But Lean cannot read Ruby. So a proof is always about a *model* of the code, and
 | The model does not do what the Ruby does | **Conformance probe.** Lean prints `input => output` rows. Ruby reads the same inputs, runs the real code, and prints its own rows. `diff` must be empty. |
 | The Ruby changes later and the model does not | **Drift lock.** `models.lock` holds a SHA-256 hash of each verified Ruby file. Any edit fails the check until someone checks the model again. |
 | A counterexample is only a bug in the model | **Ruby repro.** Each refuted theorem's witness runs against the real Ruby too. |
-| The model is too hard to write correctly | **Verifiable Ruby.** Each Ruby line has one obvious Lean line, so the copy is easy to write and easy to review. |
+| The model is copied wrong | **Translator.** `bin/translate` writes the Lean from the Ruby, so there is no hand copy. If the Ruby changes and the generated file is not rewritten, `bin/verify` fails. |
 
 Why Lean 4? It is a programming language and a proof checker in one. The same `def` that the theorems are about also runs, and it prints the conformance rows. The model has no second copy that could drift.
 
 ## How it fits together
 
 ```
-   Ruby core                    copy by hand, line for line                 Lean model
+   Ruby core                    bin/translate, line for line                Lean model
  (verifiable style)  ───────────────────────────────────────────────▶  + theorems about it
         ▲                                                                       │
         │   conformance: same inputs, same outputs (diff)                       │ lake build
@@ -77,13 +79,13 @@ This is plain Ruby 3.2+ with no gems. It is also the style that is easiest to re
 5. **Visible failure.** Guard clauses at the top raise `ArgumentError`. Return `nil` only when it means "no result".
 6. **Loops are folds.** Use `map`, `select`, `sum`, `reduce`, and `Array.new(n) { }`. No `while`, `loop`, `break`, `next`, or index mutation.
 7. **No metaprogramming.** No `send`, `define_method`, `method_missing`, `instance_variable_set`, monkey patches, or callbacks. The code you read is the code that runs.
-8. **Same names, same branches.** `remainder_last` in Ruby is `remainder_last` in Lean, with the same branches in the same order. Never clean up the logic in the model: if the Ruby has a bug, the model must have the same bug.
+8. **Types in comments.** Each `def` and each `Data.define` has a `#:` comment on the line above it, with RBS types: `#: (Integer, Order) -> Order?`. A set of symbols or a set of `Data` classes gets a name with `# @rbs type status = :placed | :paid` or `# @rbs type event = Pay | Ship`. The translator needs these types, because Lean needs them.
 
-Each rule exists because it gives a one-to-one mapping to Lean:
+Each rule exists because it gives a one-to-one mapping to Lean. `bin/translate` applies this table, and it stops with the line number when it finds Ruby that is not in it:
 
 | Ruby | Lean 4 |
 |---|---|
-| `Integer` | `Int` (or `Nat` when negatives cannot happen) |
+| `Integer` | `Int` |
 | `Data.define(:a, :b)` | `structure` |
 | `value.with(a: 1)` | `{ value with a := 1 }` |
 | `:placed`, `:paid` symbols | `inductive Status` |
@@ -121,7 +123,8 @@ Split it into a core and a shell:
 module LateFee
   module_function
 
-  def fee(amount_due:, days_late:)
+  #: (Integer, Integer) -> Integer
+  def fee(amount_due, days_late)
     return 0 unless amount_due.positive? && days_late.positive?
 
     [days_late * 50, 5_000].min
@@ -130,12 +133,12 @@ end
 
 class Invoice < ApplicationRecord
   def apply_late_fee!(today: Date.current)
-    update!(fee_cents: LateFee.fee(amount_due: balance_cents, days_late: (today - due_on).to_i))
+    update!(fee_cents: LateFee.fee(balance_cents, (today - due_on).to_i))
   end
 end
 ```
 
-The core is now one short, closed function with a direct Lean copy and three proofs:
+The core is now one short, closed function. `bin/translate` gives the Lean below, and three proofs follow:
 
 ```lean
 def fee (amount_due days_late : Int) : Int :=
@@ -162,6 +165,7 @@ The fee now depends only on its inputs, so running the job twice sets the same f
 module MoneySplit
   module_function
 
+  #: (Integer, Integer) -> Array[Integer]
   def remainder_last(total, parts)
     raise ArgumentError, "parts must be positive" unless parts.positive?
     raise ArgumentError, "total must not be negative" if total.negative?
@@ -170,6 +174,7 @@ module MoneySplit
     Array.new(parts - 1, base) + [total - (base * (parts - 1))]
   end
 
+  #: (Integer, Integer) -> Array[Integer]
   def even(total, parts)
     raise ArgumentError, "parts must be positive" unless parts.positive?
     raise ArgumentError, "total must not be negative" if total.negative?
@@ -180,7 +185,7 @@ module MoneySplit
 end
 ```
 
-The Lean copy of `even` keeps the same guards and branches in the same order:
+`bin/translate` writes `even` into `MoneySplit/Code.lean` with the same guards and branches in the same order:
 
 ```lean
 def even (total parts : Int) : Except String (List Int) :=
@@ -261,20 +266,30 @@ The conformance probe runs every `total` from -2 to 61 against every `parts` fro
 
 ```ruby
 module OrderFlow
+  # @rbs type status = :placed | :paid | :shipped | :cancelled
+  # @rbs type event = Pay | Ship | Cancel | Refund
+
+  #: (status, Integer, Integer, Integer, Array[Integer])
   Order  = Data.define(:status, :total, :paid, :refunded, :seen)
+  #: (Integer, Integer)
   Pay    = Data.define(:id, :amount)
+  #: (Integer)
   Ship   = Data.define(:id)
+  #: (Integer)
   Cancel = Data.define(:id)
+  #: (Integer, Integer)
   Refund = Data.define(:id, :amount)
 
   module_function
 
+  #: (Integer) -> Order
   def start(total)
     raise ArgumentError, "total must be positive" unless total.positive?
 
     Order.new(status: :placed, total:, paid: 0, refunded: 0, seen: [])
   end
 
+  #: (Order, event) -> Order?
   def apply(order, event)
     case [order.status, event]
     in [:placed, Pay(amount:)] if amount.positive? && order.paid + amount <= order.total
@@ -291,6 +306,7 @@ module OrderFlow
     end
   end
 
+  #: (Order, event) -> Order
   def step(order, event)
     return order if order.seen.include?(event.id)
 
@@ -298,13 +314,14 @@ module OrderFlow
     nxt ? nxt.with(seen: order.seen + [event.id]) : order
   end
 
+  #: (Order, Array[event]) -> Order
   def run(order, events)
     events.reduce(order) { |acc, event| step(acc, event) }
   end
 end
 ```
 
-The Lean copy of `apply` is the same `case/in`, written as a `match`:
+`bin/translate` turns the `case/in` of `apply` into a `match`. The `@rbs type` lines become `inductive Status` and `inductive Event`:
 
 ```lean
 def apply (order : Order) (event : Event) : Option Order :=
@@ -368,11 +385,11 @@ The conformance probe runs every sequence of up to 4 events over 10 sample event
 
 1. **Pick the core.** Choose one function or state machine. Move I/O out into the shell first.
 2. **Write the rules in plain words first.** Take them from intent: what the callers need, product rules, validations. Never take a rule only from the code under test, because then it proves nothing.
-3. **Copy the code into Lean**, line for line. Write every simplification on the `Trust:` line of the model.
+3. **Translate.** Add the `#:` types, run `bin/translate`, and put `import <Module>.Code` at the top of the model file. Write every trust boundary on the `Trust:` line of the model.
 4. **State and prove.** Put a proven rule under `## Proven` and a counterexample under `## Refuted`. Search small grids with `#eval` to find witnesses fast.
 5. **Write the probe.** `probe.lean` prints `input => output` rows over a grid: every edge case plus a dense block of small values. It then adds random rows from a fixed seed, with large values and long inputs that the grid does not reach. `probe.rb` reads the inputs, runs the real Ruby, and prints the same rows. A diff is a bug in the model until you prove otherwise. Fix the model, never the Ruby.
 6. **Write the repro.** `counterexamples.rb` runs each refuted witness against the Ruby and prints `REPRODUCED`.
-7. **Lock it.** Add the Ruby file to `models.lock`.
+7. **Lock it.** Add the Ruby file to `models.lock`. `bin/check-style` and `bin/translate` read their file list from there.
 
 Tactics that cover most business code:
 
@@ -390,8 +407,10 @@ The project uses core Lean only, with no Mathlib, so the setup stays small and t
 ```
 bin/verify                  runs every check below; exits non-zero on the first failure
 bin/check-style             rejects Ruby outside the verifiable subset (Prism)
+bin/translate               writes <Module>/Code.lean from each locked Ruby file; --check only compares
 lib/verifiable_style.rb     the rules bin/check-style applies
-test/                       tests for the style checker
+lib/lean_translator*.rb     the Ruby-to-Lean translator
+test/                       tests for the style checker and the translator
 .github/workflows/          CI: runs the tests and bin/verify on every push
 models.lock                 SHA-256 of each verified Ruby file (the drift lock)
 lakefile.toml               one Lean library per example
@@ -399,7 +418,8 @@ lean-toolchain              pins the Lean version
 examples/
   01_money_split/
     money_split.rb          the Ruby under verification
-    MoneySplit.lean         model, rules, proofs, counterexamples
+    MoneySplit/Code.lean    generated by bin/translate; do not edit
+    MoneySplit.lean         rules, proofs, counterexamples about the generated code
     probe.lean              prints input => output rows from the model
     probe.rb                reads those inputs, prints rows from the real Ruby
     counterexamples.rb      runs each refuted witness against the Ruby
@@ -411,26 +431,23 @@ examples/
 
 * Lean 4 through [elan](https://github.com/leanprover/elan). The first build installs the version in `lean-toolchain`.
 * Ruby 3.2 or later (for `Data` and pattern matching). The verified code needs no gems.
-* The style checker needs the `prism` gem, 1.2 or later: `gem install prism`.
+* The style checker and the translator need the `prism` gem, 1.2 or later: `gem install prism`.
 
 ```bash
-bin/verify            # proofs, drift lock, conformance, counterexamples
+bin/verify            # style, translation, proofs, drift lock, conformance, counterexamples
 bin/verify --relock   # after you check the model again against changed Ruby
+bin/translate         # rewrite the generated Lean after a Ruby change
 bin/check-style FILE  # verifiable-Ruby check only
-ruby test/verifiable_style_test.rb   # tests for the style checker
+for t in test/*_test.rb; do ruby "$t"; done   # tests for the tools
 lake build            # proofs only
 ```
 
-To add an example, create `examples/NN_name/` with the five files above. Then add a `[[lean_lib]]` entry to `lakefile.toml` and run `shasum -a 256 examples/NN_name/name.rb >> models.lock`.
+To add an example, create `examples/NN_name/` with the Ruby file, the model, the probes, and the counterexamples. Then add a `[[lean_lib]]` entry to `lakefile.toml`, run `shasum -a 256 examples/NN_name/name.rb >> models.lock`, and run `bin/translate`.
 
 ## Limits
 
-* **The model is written by hand.** Conformance tests it on a finite grid plus random rows, and the drift lock forces a new check after every Ruby change. That is strong evidence that the model matches the Ruby. It is not a proof of it.
+* **The translator is trusted.** `bin/translate` is ordinary Ruby, not a verified compiler. It stops on any Ruby it does not know, and conformance tests its output on a grid plus random rows. That is strong evidence that the model matches the Ruby. It is not a proof of it.
 * **Ruby itself is trusted.** `Integer`, `Data`, `divmod`, and pattern matching are taken to work as documented.
 * **The shell stays assumed.** The database, transactions, concurrency across processes, external APIs, and the clock are outside the model.
 * **A proof is only as good as its rule.** A wrong rule gets proven just as well as a right one. Write rules from intent.
 * **Lean's kernel is trusted.** `native_decide` would add the compiler to the trusted base as well. These examples do not use it.
-
-## Roadmap
-
-* A Prism-to-Lean translator for the verifiable subset. It would remove the hand copy, so the model could no longer drift from the code.

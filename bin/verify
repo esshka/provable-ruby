@@ -10,18 +10,24 @@ if [[ "${1:-}" == "--relock" ]]; then
   exit 0
 fi
 
+echo "== verifiable ruby"
+if ! ruby bin/check-style $(awk '{print $2}' models.lock); then
+  echo "FAIL: code outside verifiable Ruby (see README)"; exit 1
+fi
+echo "Ruby sources use only verifiable Ruby"
+
+echo "== translation"
+if ! bin/translate --check; then
+  echo "FAIL: generated Lean is out of date. Run: bin/translate"; exit 1
+fi
+echo "generated Lean matches the Ruby"
+
 echo "== proofs"
 lake build --quiet
 if grep -nwE "sorry|admit" examples/*/*.lean; then
   echo "FAIL: a proof is missing"; exit 1
 fi
 echo "all theorems checked"
-
-echo "== verifiable ruby"
-if ! ruby bin/check-style $(awk '{print $2}' models.lock); then
-  echo "FAIL: code outside verifiable Ruby (see README)"; exit 1
-fi
-echo "Ruby sources use only verifiable Ruby"
 
 echo "== drift lock"
 if ! shasum -a 256 --quiet -c models.lock; then

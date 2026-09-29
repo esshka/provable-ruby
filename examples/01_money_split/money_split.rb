@@ -3,6 +3,7 @@
 module MoneySplit
   module_function
 
+  #: (Integer, Integer) -> Array[Integer]
   def remainder_last(total, parts)
     raise ArgumentError, "parts must be positive" unless parts.positive?
     raise ArgumentError, "total must not be negative" if total.negative?
@@ -11,6 +12,7 @@ module MoneySplit
     Array.new(parts - 1, base) + [total - (base * (parts - 1))]
   end
 
+  #: (Integer, Integer) -> Array[Integer]
   def even(total, parts)
     raise ArgumentError, "parts must be positive" unless parts.positive?
     raise ArgumentError, "total must not be negative" if total.negative?

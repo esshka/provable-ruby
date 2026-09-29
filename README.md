@@ -17,10 +17,10 @@ Ruby sources use only verifiable Ruby
 == drift lock
 Ruby sources match models.lock
 == 01_money_split
-CONFORMS 1792 rows
+CONFORMS 3792 rows
 REPRODUCED remainder_last_is_not_fair: remainder_last(11, 4) = [2, 2, 2, 5]
 == 02_order_flow
-CONFORMS 11113 rows
+CONFORMS 14113 rows
 REPRODUCED refund_not_always_possible: paid 100, status shipped, refunded 0 after cancel + refund
 ```
 
@@ -28,7 +28,7 @@ REPRODUCED refund_not_always_possible: paid 100, status shipped, refunded 0 afte
 
 A test checks the cases you thought of. A proof checks all of them.
 
-The order example below has a probe that tries 11,113 event sequences. Its proof covers every sequence: any length, any amounts, any order, any number of retries.
+The order example below has a probe that tries 14,113 event sequences. Its proof covers every sequence: any length, any amounts, any order, any number of retries.
 
 But Lean cannot read Ruby. So a proof is always about a *model* of the code, and a model can be wrong. Most of this project exists to keep the model honest:
 
@@ -239,7 +239,7 @@ To find a witness fast, search a small grid with `#eval` before you try a proof:
 -- some (2, 3, [0, 0, 2])
 ```
 
-The conformance probe runs every `total` from -2 to 61 against every `parts` from -1 to 12, for both functions. That is 1,792 rows, including all the error rows.
+The conformance probe runs every `total` from -2 to 61 against every `parts` from -1 to 12, for both functions. That is 1,792 rows, including all the error rows. It then adds 1,000 random cases from a fixed seed: totals up to 10^20 (past 64 bits) and up to 300 parts. That makes 3,792 rows.
 
 ## Example 2: an order with payments and refunds
 
@@ -362,7 +362,7 @@ The diagram is data too (`allowed : Status → Status → Bool`). `step_follows_
 
 The refuted rule is a **product question**, not a code bug. "A customer can always get their money back" is false once an order ships. That can be the right design (returns are a separate process), or it can be a missing feature. The proof cannot decide that for you. It only makes sure someone decides.
 
-The conformance probe runs every sequence of up to 4 events over 10 sample events (including duplicate ids, negative amounts, and over-payments), plus the error rows. That is 11,113 rows.
+The conformance probe runs every sequence of up to 4 events over 10 sample events (including duplicate ids, negative amounts, and over-payments), plus the error rows. It then adds 3,000 random sequences from a fixed seed: up to 12 events, totals up to 10^18, and colliding ids. That is 14,113 rows.
 
 ## How to verify new code
 
@@ -370,7 +370,7 @@ The conformance probe runs every sequence of up to 4 events over 10 sample event
 2. **Write the rules in plain words first.** Take them from intent: what the callers need, product rules, validations. Never take a rule only from the code under test, because then it proves nothing.
 3. **Copy the code into Lean**, line for line. Write every simplification on the `Trust:` line of the model.
 4. **State and prove.** Put a proven rule under `## Proven` and a counterexample under `## Refuted`. Search small grids with `#eval` to find witnesses fast.
-5. **Write the probe.** `probe.lean` prints `input => output` rows over a grid: every edge case plus a dense block of small values. `probe.rb` reads the inputs, runs the real Ruby, and prints the same rows. A diff is a bug in the model until you prove otherwise. Fix the model, never the Ruby.
+5. **Write the probe.** `probe.lean` prints `input => output` rows over a grid: every edge case plus a dense block of small values. It then adds random rows from a fixed seed, with large values and long inputs that the grid does not reach. `probe.rb` reads the inputs, runs the real Ruby, and prints the same rows. A diff is a bug in the model until you prove otherwise. Fix the model, never the Ruby.
 6. **Write the repro.** `counterexamples.rb` runs each refuted witness against the Ruby and prints `REPRODUCED`.
 7. **Lock it.** Add the Ruby file to `models.lock`.
 
@@ -425,7 +425,7 @@ To add an example, create `examples/NN_name/` with the five files above. Then ad
 
 ## Limits
 
-* **The model is written by hand.** Conformance tests it on a finite grid, and the drift lock forces a new check after every Ruby change. That is strong evidence that the model matches the Ruby. It is not a proof of it.
+* **The model is written by hand.** Conformance tests it on a finite grid plus random rows, and the drift lock forces a new check after every Ruby change. That is strong evidence that the model matches the Ruby. It is not a proof of it.
 * **Ruby itself is trusted.** `Integer`, `Data`, `divmod`, and pattern matching are taken to work as documented.
 * **The shell stays assumed.** The database, transactions, concurrency across processes, external APIs, and the clock are outside the model.
 * **A proof is only as good as its rule.** A wrong rule gets proven just as well as a right one. Write rules from intent.
@@ -434,4 +434,3 @@ To add an example, create `examples/NN_name/` with the five files above. Then ad
 ## Roadmap
 
 * A Prism-to-Lean translator for the verifiable subset. It would remove the hand copy, so the model could no longer drift from the code.
-* Random (property-based) conformance in addition to the fixed grid.

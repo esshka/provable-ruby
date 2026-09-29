@@ -1,0 +1,11 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Usage: bin/check-style FILE... — exits non-zero if any file leaves verifiable Ruby.
+require_relative "../lib/verifiable_style"
+
+found = ARGV.flat_map do |path|
+  VerifiableStyle.violations(File.read(path)).map { "#{path}:#{_1.line} [#{_1.rule}] #{_1.message}" }
+end
+puts found
+exit(found.empty? ? 0 : 1)

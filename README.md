@@ -12,6 +12,8 @@ provable-ruby is a method plus a working template:
 $ bin/verify
 == proofs
 all theorems checked
+== verifiable ruby
+Ruby sources use only verifiable Ruby
 == drift lock
 Ruby sources match models.lock
 == 01_money_split
@@ -66,7 +68,7 @@ A refuted rule is not always a bug. Sometimes it is a product question. Example 
 
 ## Verifiable Ruby
 
-This is plain Ruby 3.2+ with no gems. It is also the style that is easiest to read and test. The rules:
+This is plain Ruby 3.2+ with no gems. It is also the style that is easiest to read and test. `bin/check-style` rejects code that breaks these rules in every locked file. The rules:
 
 1. **Pure core, thin shell.** The core never touches the database, the clock, randomness, the network, or globals. The shell loads data, calls the core, and saves the result. Only the core is verified.
 2. **Values, not objects.** Use `Data.define` for records. Never mutate: `with` returns a new value.
@@ -387,6 +389,10 @@ The project uses core Lean only, with no Mathlib, so the setup stays small and t
 
 ```
 bin/verify                  runs every check below; exits non-zero on the first failure
+bin/check-style             rejects Ruby outside the verifiable subset (Prism)
+lib/verifiable_style.rb     the rules bin/check-style applies
+test/                       tests for the style checker
+.github/workflows/          CI: runs the tests and bin/verify on every push
 models.lock                 SHA-256 of each verified Ruby file (the drift lock)
 lakefile.toml               one Lean library per example
 lean-toolchain              pins the Lean version
@@ -404,11 +410,14 @@ examples/
 ## Requirements and commands
 
 * Lean 4 through [elan](https://github.com/leanprover/elan). The first build installs the version in `lean-toolchain`.
-* Ruby 3.2 or later (for `Data` and pattern matching). No gems.
+* Ruby 3.2 or later (for `Data` and pattern matching). The verified code needs no gems.
+* The style checker needs the `prism` gem, 1.2 or later: `gem install prism`.
 
 ```bash
 bin/verify            # proofs, drift lock, conformance, counterexamples
 bin/verify --relock   # after you check the model again against changed Ruby
+bin/check-style FILE  # verifiable-Ruby check only
+ruby test/verifiable_style_test.rb   # tests for the style checker
 lake build            # proofs only
 ```
 
@@ -424,7 +433,5 @@ To add an example, create `examples/NN_name/` with the five files above. Then ad
 
 ## Roadmap
 
-* A Prism-based checker that rejects code outside verifiable Ruby.
-* A Prism-to-Lean translator for that subset. It would remove the hand copy, so the model could no longer drift from the code.
+* A Prism-to-Lean translator for the verifiable subset. It would remove the hand copy, so the model could no longer drift from the code.
 * Random (property-based) conformance in addition to the fixed grid.
-* A CI job that runs `bin/verify` on every push.

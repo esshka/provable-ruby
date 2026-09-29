@@ -17,6 +17,12 @@ if grep -nwE "sorry|admit" examples/*/*.lean; then
 fi
 echo "all theorems checked"
 
+echo "== verifiable ruby"
+if ! ruby bin/check-style $(awk '{print $2}' models.lock); then
+  echo "FAIL: code outside verifiable Ruby (see README)"; exit 1
+fi
+echo "Ruby sources use only verifiable Ruby"
+
 echo "== drift lock"
 if ! shasum -a 256 --quiet -c models.lock; then
   echo "FAIL: Ruby changed since its model was last checked."

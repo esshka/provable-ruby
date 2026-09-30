@@ -33,9 +33,8 @@ machine over events) are complete, working references. Copy their shape.
 
 Requirements: Ruby 3.2+, the `prism` gem 1.2+, and Lean through elan (`lake` on PATH). Check with
 `ruby -v`, `ruby -e 'require "prism"; puts Prism::VERSION'`, `lake --version`. If one is missing,
-give the user the install command and ask before running it:
-`gem install prism` and
-`curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none`.
+tell the user what to install and ask before running anything: `gem install prism`, and elan from
+its official instructions at https://github.com/leanprover/elan#installation (on macOS: `brew install elan-init`).
 
 ## Workflow
 

@@ -1,19 +1,24 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Usage: bin/translate [--check]
-# Writes <example dir>/<Module>/Code.lean for each Ruby file in models.lock.
-# --check writes nothing and fails if any generated file is out of date.
+# Usage: bin/translate [--check] [PROJECT_DIR]
+# PROJECT_DIR holds lakefile.toml and models.lock (default: this repo).
+# For each Ruby file in models.lock, writes <srcDir>/<Module>/Code.lean, where srcDir belongs to
+# the [[lean_lib]] named like the Ruby module. --check writes nothing and fails if a file is out of date.
 require "fileutils"
 require_relative "../lib/lean_translator"
 
-root = File.expand_path("..", __dir__)
 check = ARGV.include?("--check")
+root = File.expand_path(ARGV.reject { _1.start_with?("--") }.first || File.expand_path("..", __dir__))
+libs = File.read(File.join(root, "lakefile.toml")).split("[[lean_lib]]").drop(1).to_h do |section|
+  [section[/^name\s*=\s*"([^"]+)"/, 1], section[/^srcDir\s*=\s*"([^"]+)"/, 1] || "."]
+end
 sources = File.readlines(File.join(root, "models.lock")).map { _1.split.last }
 
 stale = sources.filter_map do |rel|
   mod, lean = LeanTranslator.translate(File.read(File.join(root, rel)), path: rel)
-  out = File.join(File.dirname(rel), mod, "Code.lean")
+  src_dir = libs.fetch(mod) { raise LeanTranslator::Unsupported, "lakefile.toml has no [[lean_lib]] named #{mod}" }
+  out = File.join(src_dir, mod, "Code.lean")
   path = File.join(root, out)
   next if File.exist?(path) && File.read(path) == lean
   next out if check

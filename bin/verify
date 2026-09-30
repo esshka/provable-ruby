@@ -1,45 +1,57 @@
 #!/usr/bin/env bash
 # Checks every proof, the drift lock, Ruby-vs-Lean conformance, and every counterexample.
+# Usage: bin/verify [--relock] [PROJECT_DIR]   (PROJECT_DIR holds lakefile.toml and models.lock; default: this repo)
 set -euo pipefail
-cd "$(dirname "$0")/.."
+tools="$(cd "$(dirname "$0")" && pwd)"
+relock=false
+root="$tools/.."
+for arg in "$@"; do
+  if [[ "$arg" == "--relock" ]]; then relock=true; else root="$arg"; fi
+done
+cd "$root"
 
-if [[ "${1:-}" == "--relock" ]]; then
+if $relock; then
   files=$(awk '{print $2}' models.lock)
   shasum -a 256 $files > models.lock
   echo "models.lock updated"
   exit 0
 fi
 
+# Each [[lean_lib]] srcDir holds one model with its probe.lean, probe.rb and optional counterexamples.rb.
+dirs=$(awk -F'"' '/^srcDir/ {print $2}' lakefile.toml)
+
 echo "== verifiable ruby"
-if ! ruby bin/check-style $(awk '{print $2}' models.lock); then
+if ! ruby "$tools/check-style" $(awk '{print $2}' models.lock); then
   echo "FAIL: code outside verifiable Ruby (see README)"; exit 1
 fi
 echo "Ruby sources use only verifiable Ruby"
 
 echo "== translation"
-if ! bin/translate --check; then
-  echo "FAIL: generated Lean is out of date. Run: bin/translate"; exit 1
+if ! "$tools/translate" --check .; then
+  echo "FAIL: generated Lean is out of date. Run: $tools/translate $root"; exit 1
 fi
 echo "generated Lean matches the Ruby"
 
 echo "== proofs"
 lake build --quiet
-if grep -nwE "sorry|admit" examples/*/*.lean; then
-  echo "FAIL: a proof is missing"; exit 1
-fi
+for dir in $dirs; do
+  if grep -nwE "sorry|admit" "$dir"/*.lean; then
+    echo "FAIL: a proof is missing"; exit 1
+  fi
+done
 echo "all theorems checked"
 
 echo "== drift lock"
 if ! shasum -a 256 --quiet -c models.lock; then
   echo "FAIL: Ruby changed since its model was last checked."
-  echo "Re-read the model against the Ruby, fix it, then run: bin/verify --relock"
+  echo "Re-read the model against the Ruby, fix it, then run: $tools/verify --relock $root"
   exit 1
 fi
 echo "Ruby sources match models.lock"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-for dir in examples/*/; do
+for dir in $dirs; do
   echo "== $(basename "$dir")"
   lake env lean --run "$dir/probe.lean" > "$tmp/lean.txt" || { cat "$tmp/lean.txt"; exit 1; }
   ruby "$dir/probe.rb" < "$tmp/lean.txt" > "$tmp/ruby.txt"
@@ -48,5 +60,5 @@ for dir in examples/*/; do
     echo "FAIL: Ruby and the Lean model disagree (rows above)"; exit 1
   fi
   echo "CONFORMS $(wc -l < "$tmp/lean.txt" | tr -d ' ') rows"
-  ruby "$dir/counterexamples.rb"
+  if [[ -f "$dir/counterexamples.rb" ]]; then ruby "$dir/counterexamples.rb"; fi
 done

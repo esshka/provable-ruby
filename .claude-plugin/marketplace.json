@@ -1,0 +1,16 @@
+{
+  "name": "provable-ruby",
+  "description": "Claude Code plugin: prove Ruby business logic for every input with Lean 4.",
+  "owner": {
+    "name": "esshka",
+    "url": "https://github.com/esshka"
+  },
+  "plugins": [
+    {
+      "name": "provable-ruby",
+      "description": "Prove Ruby business logic for every input with Lean 4.",
+      "source": "./",
+      "category": "development"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "provable-ruby",
+  "version": "0.1.0",
+  "description": "Prove Ruby business logic for every input with Lean 4: verifiable-Ruby style checks, a Ruby-to-Lean translator, proof recipes, and Ruby-vs-Lean conformance checks.",
+  "author": {
+    "name": "esshka",
+    "url": "https://github.com/esshka"
+  },
+  "repository": "https://github.com/esshka/provable-ruby",
+  "keywords": ["ruby", "lean4", "formal-verification", "proofs", "rails"]
+}

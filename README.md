@@ -402,6 +402,25 @@ Tactics that cover most business code:
 
 The project uses core Lean only, with no Mathlib, so the setup stays small and the build is fast.
 
+## Use with Claude Code
+
+This repo is also a Claude Code plugin. Install it once, then work in any Ruby or Rails repo:
+
+```
+/plugin marketplace add esshka/provable-ruby
+/plugin install provable-ruby@provable-ruby
+```
+
+It adds three skills, which Claude loads when the task fits:
+
+| Skill | Use |
+|---|---|
+| `provable-ruby` | the whole method: set up `proofs/` in your repo, translate, prove, run `bin/verify` |
+| `verifiable-ruby` | refactor Ruby into the verifiable subset, add type comments, fix check-style and translate errors |
+| `lean-proofs` | state rules as theorems, prove or refute them, repair broken proofs |
+
+Then ask, for example: "Prove that the refund logic in `app/services/refunds.rb` never refunds more than was paid." The tools run from the plugin; your repo gets a `proofs/` folder with its own `lakefile.toml` and `models.lock`, and `bin/verify proofs` checks it. To try the plugin from a clone without installing it: `claude --plugin-dir /path/to/provable-ruby`.
+
 ## Project layout
 
 ```
@@ -411,6 +430,8 @@ bin/translate               writes <Module>/Code.lean from each locked Ruby file
 lib/verifiable_style.rb     the rules bin/check-style applies
 lib/lean_translator*.rb     the Ruby-to-Lean translator
 test/                       tests for the style checker and the translator
+.claude-plugin/             Claude Code plugin and marketplace manifests
+skills/                     the plugin's skills (provable-ruby, verifiable-ruby, lean-proofs)
 .github/workflows/          CI: runs the tests and bin/verify on every push
 models.lock                 SHA-256 of each verified Ruby file (the drift lock)
 lakefile.toml               one Lean library per example
@@ -437,6 +458,7 @@ examples/
 bin/verify            # style, translation, proofs, drift lock, conformance, counterexamples
 bin/verify --relock   # after you check the model again against changed Ruby
 bin/translate         # rewrite the generated Lean after a Ruby change
+bin/verify DIR        # same checks for another project (DIR holds lakefile.toml and models.lock)
 bin/check-style FILE  # verifiable-Ruby check only
 for t in test/*_test.rb; do ruby "$t"; done   # tests for the tools
 lake build            # proofs only

@@ -6,6 +6,7 @@
     "name": "esshka",
     "url": "https://github.com/esshka"
   },
+  "license": "MIT",
   "repository": "https://github.com/esshka/provable-ruby",
   "keywords": ["ruby", "lean4", "formal-verification", "proofs", "rails"]
 }

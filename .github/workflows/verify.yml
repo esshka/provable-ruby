@@ -9,8 +9,7 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.4"
-      # The checker needs Prism >= 1.2 (CaseNode#else_clause); the gem pins that on any Ruby.
-      - run: gem install prism --no-document
+      # Ruby 3.4 bundles Prism >= 1.0, which the checker and translator need.
       # Installs the toolchain from lean-toolchain only; bin/verify runs the build.
       - uses: leanprover/lean-action@v1
         with:

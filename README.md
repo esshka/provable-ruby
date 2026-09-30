@@ -452,7 +452,7 @@ examples/
 
 * Lean 4 through [elan](https://github.com/leanprover/elan). The first build installs the version in `lean-toolchain`.
 * Ruby 3.2 or later (for `Data` and pattern matching). The verified code needs no gems.
-* The style checker and the translator need the `prism` gem, 1.2 or later: `gem install prism`.
+* The style checker and the translator need Prism 1.0 or later. Ruby 3.4 and later include it; on Ruby 3.2 or 3.3, add the `prism` gem.
 
 ```bash
 bin/verify            # style, translation, proofs, drift lock, conformance, counterexamples

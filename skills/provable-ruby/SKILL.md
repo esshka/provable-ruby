@@ -31,10 +31,10 @@ All tools ship in this plugin, at `${CLAUDE_PLUGIN_ROOT}`. Run them with that ab
 `${CLAUDE_PLUGIN_ROOT}/examples/01_money_split/` (pure functions) and `${CLAUDE_PLUGIN_ROOT}/examples/02_order_flow/` (a state
 machine over events) are complete, working references. Copy their shape.
 
-Requirements: Ruby 3.2+, the `prism` gem 1.2+, and Lean through elan (`lake` on PATH). Check with
+Requirements: Ruby 3.2+, Prism 1.0+ (included in Ruby 3.4+), and Lean through elan (`lake` on PATH). Check with
 `ruby -v`, `ruby -e 'require "prism"; puts Prism::VERSION'`, `lake --version`. If one is missing,
-tell the user what to install and ask before running anything: `gem install prism`, and elan from
-its official instructions at https://github.com/leanprover/elan#installation (on macOS: `brew install elan-init`).
+tell the user what is missing and ask before installing anything: the `prism` gem (only on Ruby 3.2/3.3), and elan from
+its official instructions at https://github.com/leanprover/elan#installation.
 
 ## Workflow
 
